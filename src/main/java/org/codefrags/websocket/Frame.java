@@ -33,7 +33,7 @@ public class Frame {
 	 * bytes for size, and 4 possible bytes
 	 * for a masking key.
 	 */
-	public static final int MAX_HEADER_SIZE = 2+8+4;
+	public static final int MAX_data_SIZE = 2+8+4;
 	
 	private static final int KEEP_FRAMES_COUNT = 30;
 	private static final int DATA_BUFFER_SIZE=1<<18; // 1/4 megabyte
@@ -42,7 +42,7 @@ public class Frame {
 	
 	/**
 	 * the max amount of memory this can become is ....
-	 * KEEP_FRAMES_COUNT*(MAX_HEADER_SIZE + MAX_BUFFER_SIZE + class overhead)
+	 * KEEP_FRAMES_COUNT*(MAX_data_SIZE + MAX_BUFFER_SIZE + class overhead)
 	 */
 	private static List<Frame> storage = new ArrayList<Frame>();
 	
@@ -77,19 +77,18 @@ public class Frame {
 	private byte [] data = new byte[DATA_BUFFER_SIZE];
 	
 	private int length;
-	private int dataMarker;
-	private int offset;
+	private int dataSize;
+	private int expectedHeaderSize;
 	private int maskKey;
-	
 	
 	/**
 	 * This resets values such that the frame is reusable to store
 	 * a new frame. 
 	 */
 	public void reset() {
-		offset=0;
 		length = -1;
-		dataMarker=0;
+		dataSize=0;
+		expectedHeaderSize=0;
 		
 		if(data.length >= MAX_BUFFER_SIZE) {
 			data = new byte[DATA_BUFFER_SIZE];
@@ -100,123 +99,177 @@ public class Frame {
 	/**
 	 * 
 	 * 
-	 * @param The bytes to append to the header.
+	 * @param The bytes to append to the data.
 	 * @param The offset to begin copying from the bytes.
 	 * @param The number of bytes to copy starting at the offset.
-	 * @return Whether the header was completely formed.
+	 * @return The number of bytes written, less than the length means the frame finished
 	 * @throws Exception
 	 */
-	public boolean writeBytes(byte[] bytes,int offset,int length) throws Exception {
+	public int writeBytes(byte[] bytes,int offset,int length) throws Exception {
 		
-		int size = Math.min(length, MAX_HEADER_SIZE - headerSize);
-		System.arraycopy(bytes, offset, header, headerSize, size);
-		
-		headerSize+=size;
-		
-		
-		if(getLength() == -1) {
-			return false;
-		}
-
-		increaseAllocation();
-		
-		if(isMasked()) {
-			
+		if(dataSize + length > data.length) {
+			increaseAllocation(dataSize + length);
 		}
 		
-		return true;
+		copyHeader(bytes,offset,length);
+		
+		int bytesToRead = length;
+		if(length !=-1) {
+			int bytesNeeded = expectedHeaderSize + length;
+			int bytesLeft = bytesNeeded - dataSize;
+			bytesToRead = Math.min(bytesLeft, length);
+		}
+		
+		System.arraycopy(bytes, offset, data, dataSize, bytesToRead);
+		
+		dataSize+=bytesToRead;
+		
+		if(length != -1 && dataSize == expectedHeaderSize + length) {
+			System.out.println(this);
+			returnFrame(this);
+		}
+		
+		return bytesToRead;
 	}
 	
+	
+	public String toString() {
+		StringBuilder sb = new StringBuilder();
+		
+		sb.append("\n\n>>>Frame\n");
+		
+		int count = 0;
+		for(int i = 0;i<dataSize;++i) {
+			sb.append(" "+binary(data[i]));
+			++count;
+			if(count == 32/Byte.SIZE) {
+				sb.append("\n");
+				count = 0;
+			}
+		}
+		return sb.toString();
+	}
+
+	
+    private String binary(byte word) {
+    	int size = Byte.SIZE;
+    	
+    	String s = "";
+    	for(int i = size-1;i>=0;--i) {
+    		s += 1 & (word >> i);
+    	}
+    	return s;
+    }
+
+	/**
+	 * @param bytes
+	 * @param offset2
+	 * @param length2
+	 * @throws IOException 
+	 */
+	private void copyHeader(byte[] bytes, int offset, int length) throws IOException {
+		if(dataSize + length < 2) {
+			return;
+		}
+		
+		
+		if(dataSize == 0) {
+			data[0] = bytes[offset];
+			data[1] = bytes[offset+1];
+		} else if(dataSize == 1){
+			data[1] = bytes[offset];
+		}
+		
+		expectedHeaderSize = 2;
+		
+		if(isMasked()) {
+			expectedHeaderSize+=4;
+		}
+		
+		int size = data[1] & 0x7F;
+		if(size == 126) {
+			expectedHeaderSize+=2;
+		} else if(size == 127) {
+			expectedHeaderSize+=8;
+		}
+		
+		if(dataSize + length < expectedHeaderSize) {
+			return;
+		}
+		
+		int offset2 = 0;
+		for(int i = dataSize;i<expectedHeaderSize;++i) {
+			data[i] = bytes[offset + offset2];
+			++offset2;
+		}
+		
+		calculateLength();
+		
+		if(isMasked()) {
+			for(int i = expectedHeaderSize-4;i<expectedHeaderSize;++i) {
+				maskKey = (maskKey << Byte.SIZE) | data[i];
+			}
+		}
+	}
+
 	/**
 	 * @return
 	 */
 	private boolean isMasked() {
 		return (data[1]>>Byte.SIZE) == 1 ? true : false;
 	}
-
-	/**
-	 * 
-	 * @return the length of the data, -1 if there's not enough header data
-	 * @throws IOException 
-	 */
-	public int getLength() throws IOException {
-		if(length >= 0) {
-			return length;
-		}
-		
-		if(headerSize < 2) {
-			return -1;
-		}
-		
-		int size = header[1] & 0x7F;
+	
+	private void calculateLength() throws IOException {
+		int size = data[1] & 0x7F;
 		
 		if(size < 126) {
 			length = size;
-			return length;
-		}
-		
-		if( (size == 126 && headerSize < 4) ||
-				(size == 127 && headerSize < 10)) {
-			return -1;
 		}
 		
 		if(size==126) {
-			length = (header[2] << Byte.SIZE) | header[3];
-			return length;
+			length = (data[2] << Byte.SIZE) | data[3];
 		}
 		
 		// the final case, bytes 3-10 are the length
 		// we're choosing not to support sizes greater 32 bits (about 4billion)
 		
-		if((header[6] | header[7] | header[8] | header[9]) != 0) {
+		if((data[6] | data[7] | data[8] | data[9]) != 0) {
 			throw new IOException("Frame data length is larger than 2^32 which is not supported.");
 		}
 		
 		length = 0;
 		for(int i = 2;i<6;++i) {
-			length = (length << Byte.SIZE) | header[i];
+			length = (length << Byte.SIZE) | data[i];
 		}
+	}
+
+	/**
+	 * 
+	 * @return the length of the data
+	 */
+	public int getLength() throws IOException {
 		return length;
 	}
+	
+	private void increaseAllocation(int desiredSize) throws Exception {
 
-	
-	public void addDataByte(byte b) {
-		data[dataMarker] = b;
-		++dataMarker;
-	}
-	
-	private void increaseAllocation() throws Exception {
-		
-		int newSize = (int) length;
-		if(newSize == -1 || newSize > data.length) {
-			return;
-		}
-		
+		int newSize = data.length;
 		while(true) {
-			newSize <<=1; // this doubles it;
-
-			if(newSize > MAX_FRAME_LENGTH) {
+			newSize <<= 1;
+			if(newSize < 0) {
 				throw new IOException("Too large a frame requested by peer.  This might be malicious.");
-			}
-			
-			if(newSize > length) {
+			} 
+			if(newSize > desiredSize) {
 				break;
 			}
+		}
+
+		if(newSize > MAX_FRAME_LENGTH) {
+			throw new IOException("Too large a frame requested by peer.  This might be malicious.");
 		}
 		
 		byte[] newData = new byte[newSize];
 		System.arraycopy(data, 0, newData, 0, data.length);
 		data = newData;
 	}
-	
-	public void addDataBytes(byte[] bytes,int offset,int length) {
-		
-		
-		
-		int size = Math.min(length, MAX_HEADER_SIZE - dataMarker);
-		System.arraycopy(bytes, offset, header, dataMarker, size);
-		
-		dataMarker+=size;
-	}
-	 
 }
