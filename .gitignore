@@ -1,0 +1,6 @@
+target/
+.externalToolBuilders/
+.classpath
+datasource.properties
+.settings
+.project
