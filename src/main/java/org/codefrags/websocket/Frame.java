@@ -73,8 +73,7 @@ public class Frame {
 	
 	private int length;
 	private int dataSize;
-	private int expectedHeaderSize;
-	private int maskKey;
+	private int headerSize;
 	
 	/**
 	 * This resets values such that the frame is reusable to store
@@ -83,7 +82,7 @@ public class Frame {
 	public void reset() {
 		length = -1;
 		dataSize=0;
-		expectedHeaderSize=20; // to foil the constructed() function
+		headerSize=20; // to foil the constructed() function
 		
 		if(data.length >= MAX_BUFFER_SIZE) {
 			data = new byte[DATA_BUFFER_SIZE];
@@ -91,7 +90,7 @@ public class Frame {
 	}
 	
 	public boolean isConstructed() {
-		return (dataSize == expectedHeaderSize + length) ? true : false;
+		return (dataSize == headerSize + length) ? true : false;
 	}
 	
 	/**
@@ -113,7 +112,7 @@ public class Frame {
 		
 		int bytesToRead = length;
 		if(length !=-1) {
-			int bytesNeeded = expectedHeaderSize + length;
+			int bytesNeeded = headerSize + this.length;
 			int bytesLeft = bytesNeeded - dataSize;
 			bytesToRead = Math.min(bytesLeft, length);
 		}
@@ -122,7 +121,8 @@ public class Frame {
 		
 		dataSize+=bytesToRead;
 		
-		if(length != -1 && dataSize == expectedHeaderSize + length) {
+		if(isConstructed()) {
+			unmask();
 			System.out.println(this);
 			returnFrame(this);
 		}
@@ -130,6 +130,18 @@ public class Frame {
 		return bytesToRead;
 	}
 	
+	private void unmask() {
+		int maskKeyOffset=headerSize-4;
+		int mod = 0;
+		for(int i = headerSize;i<dataSize;++i) {
+			mod = (i - headerSize) % 4;
+			data[i] ^= data[maskKeyOffset+mod];
+		}
+	}
+	
+	public String getText() {
+		return new String(data,headerSize,dataSize-headerSize);
+	}
 	
 	public String toString() {
 		StringBuilder sb = new StringBuilder();
@@ -145,6 +157,10 @@ public class Frame {
 				count = 0;
 			}
 		}
+		sb.append("\n");
+		sb.append(">>>payload\n");
+		sb.append(getText());
+		
 		return sb.toString();
 	}
 
@@ -178,43 +194,37 @@ public class Frame {
 			data[1] = bytes[offset];
 		}
 		
-		expectedHeaderSize = 2;
+		headerSize = 2;
 		
 		if(isMasked()) {
-			expectedHeaderSize+=4;
+			headerSize+=4;
 		}
 		
 		int size = data[1] & 0x7F;
 		if(size == 126) {
-			expectedHeaderSize+=2;
+			headerSize+=2;
 		} else if(size == 127) {
-			expectedHeaderSize+=8;
+			headerSize+=8;
 		}
 		
-		if(dataSize + length < expectedHeaderSize) {
+		if(dataSize + length < headerSize) {
 			return;
 		}
 		
 		int offset2 = 0;
-		for(int i = dataSize;i<expectedHeaderSize;++i) {
+		for(int i = dataSize;i<headerSize;++i) {
 			data[i] = bytes[offset + offset2];
 			++offset2;
 		}
 		
 		calculateLength();
-		
-		if(isMasked()) {
-			for(int i = expectedHeaderSize-4;i<expectedHeaderSize;++i) {
-				maskKey = (maskKey << Byte.SIZE) | data[i];
-			}
-		}
 	}
 
 	/**
 	 * @return whether the data is masked
 	 */
 	private boolean isMasked() {
-		return (data[1]>>Byte.SIZE) == 1 ? true : false;
+		return ((data[1]>>Byte.SIZE-1) & 1) == 1 ? true : false;
 	}
 	
 	private void calculateLength() throws IOException {
@@ -222,17 +232,19 @@ public class Frame {
 		
 		if(size < 126) {
 			length = size;
+			return;
 		}
 		
 		if(size==126) {
 			length = (data[2] << Byte.SIZE) | data[3];
+			return;
 		}
 		
 		// the final case, bytes 3-10 are the length
 		// we're choosing not to support sizes greater 32 bits (about 4billion)
 		
 		if((data[6] | data[7] | data[8] | data[9]) != 0 ||
-				data[5]>>Byte.SIZE == 1) {
+				((data[5]>>Byte.SIZE-1) & 1) == 1) {
 			throw new IOException("Frame data length is larger than 2^31 which is not supported.");
 		}
 		
