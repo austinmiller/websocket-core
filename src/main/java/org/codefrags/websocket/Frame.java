@@ -28,12 +28,7 @@ import java.util.List;
  */
 public class Frame {
 	
-	/**
-	 * There are 2 bytes required , 8 possible
-	 * bytes for size, and 4 possible bytes
-	 * for a masking key.
-	 */
-	public static final int MAX_data_SIZE = 2+8+4;
+	public static final int MAX_DATA_SIZE = 2+8+4;
 	
 	private static final int KEEP_FRAMES_COUNT = 30;
 	private static final int DATA_BUFFER_SIZE=1<<18; // 1/4 megabyte
@@ -88,13 +83,16 @@ public class Frame {
 	public void reset() {
 		length = -1;
 		dataSize=0;
-		expectedHeaderSize=0;
+		expectedHeaderSize=20; // to foil the constructed() function
 		
 		if(data.length >= MAX_BUFFER_SIZE) {
 			data = new byte[DATA_BUFFER_SIZE];
 		}
 	}
 	
+	public boolean isConstructed() {
+		return (dataSize == expectedHeaderSize + length) ? true : false;
+	}
 	
 	/**
 	 * 
@@ -105,7 +103,7 @@ public class Frame {
 	 * @return The number of bytes written, less than the length means the frame finished
 	 * @throws Exception
 	 */
-	public int writeBytes(byte[] bytes,int offset,int length) throws Exception {
+	public int writeBytes(byte[] bytes,int offset,int length) throws IOException {
 		
 		if(dataSize + length > data.length) {
 			increaseAllocation(dataSize + length);
@@ -213,7 +211,7 @@ public class Frame {
 	}
 
 	/**
-	 * @return
+	 * @return whether the data is masked
 	 */
 	private boolean isMasked() {
 		return (data[1]>>Byte.SIZE) == 1 ? true : false;
@@ -233,39 +231,36 @@ public class Frame {
 		// the final case, bytes 3-10 are the length
 		// we're choosing not to support sizes greater 32 bits (about 4billion)
 		
-		if((data[6] | data[7] | data[8] | data[9]) != 0) {
-			throw new IOException("Frame data length is larger than 2^32 which is not supported.");
+		if((data[6] | data[7] | data[8] | data[9]) != 0 ||
+				data[5]>>Byte.SIZE == 1) {
+			throw new IOException("Frame data length is larger than 2^31 which is not supported.");
 		}
 		
 		length = 0;
-		for(int i = 2;i<6;++i) {
+		for(int i = 2;i<10;++i) {
 			length = (length << Byte.SIZE) | data[i];
 		}
 	}
 
 	/**
 	 * 
-	 * @return the length of the data
+	 * @return the length of the data in bytes
 	 */
 	public int getLength() throws IOException {
 		return length;
 	}
 	
-	private void increaseAllocation(int desiredSize) throws Exception {
+	private void increaseAllocation(int desiredSize) throws IOException {
 
 		int newSize = data.length;
 		while(true) {
 			newSize <<= 1;
-			if(newSize < 0) {
+			if(newSize < 0 || newSize > MAX_FRAME_LENGTH) {
 				throw new IOException("Too large a frame requested by peer.  This might be malicious.");
 			} 
 			if(newSize > desiredSize) {
 				break;
 			}
-		}
-
-		if(newSize > MAX_FRAME_LENGTH) {
-			throw new IOException("Too large a frame requested by peer.  This might be malicious.");
 		}
 		
 		byte[] newData = new byte[newSize];
