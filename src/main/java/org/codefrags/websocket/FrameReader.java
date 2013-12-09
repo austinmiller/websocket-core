@@ -36,18 +36,26 @@ import org.codefrags.websocket.codec.Base64;
  */
 public class FrameReader {
 	
+	Socket client;
+	PrintWriter out;
+	BufferedReader in;
 	private static final String WEBSOCKET_GUID = "258EAFA5-E914-47DA-95CA-C5AB0DC85B11";
 
     public void acceptWebsocket() throws Exception {
     	System.out.println("opening socket");
     	ServerSocket serverSocket = new ServerSocket(8090);
-    	Socket client = serverSocket.accept();
-        PrintWriter out = new PrintWriter(client.getOutputStream(), true);
-        BufferedReader in = new BufferedReader(new InputStreamReader(client.getInputStream()));
+    	client = serverSocket.accept();
+        out = new PrintWriter(client.getOutputStream(), true);
+        in = new BufferedReader(new InputStreamReader(client.getInputStream()));
         
         
         negotiateHeaders(out, in);
  
+        WritableFrame ping = new WritableFrame(OpCode.PING);
+        ping.write(client.getOutputStream());
+        
+        new WritableFrame("Hello Sexy").write(client.getOutputStream());
+        
         read(client.getInputStream());
         
         serverSocket.close();
@@ -83,7 +91,6 @@ public class FrameReader {
 	
     public static void main(String[] args) {
     	try {
-    		
     		
     		FrameReader fr = new FrameReader();
     		
@@ -139,19 +146,41 @@ public class FrameReader {
 		int read = 0;
 		int written = 0;
 		
-		Frame frame = Frame.newFrame();
+		MaskedFrame frame = MaskedFrame.newFrame();
 		
 		while((read = in.read(bytes)) != -1) {
 			written = frame.writeBytes(bytes, 0, read);
 
 			while(written != read) {
-				frame = Frame.newFrame();
+				handleFrame(frame);
+				frame = MaskedFrame.newFrame();
 				written += frame.writeBytes(bytes, written, read-written);
 			}
 
 			if(frame.isConstructed()) {
-				frame = Frame.newFrame();
+				handleFrame(frame);
+				frame = MaskedFrame.newFrame();
 			}
+		}
+	}
+
+	/**
+	 * @throws IOException 
+	 * 
+	 */
+	private void handleFrame(MaskedFrame frame) throws IOException {
+		if(frame.getOpCode() == OpCode.PING) {
+			System.out.println(">>> Ping");
+			WritableFrame pong = new WritableFrame(OpCode.PONG);
+			pong.write(client.getOutputStream());
+		}
+		
+		if(frame.getOpCode() == OpCode.PONG) {
+			System.out.println(">>> Pong");
+		}
+		
+		if(frame.getOpCode() == OpCode.TEXT) {
+			System.out.println(frame);
 		}
 	}
 }
