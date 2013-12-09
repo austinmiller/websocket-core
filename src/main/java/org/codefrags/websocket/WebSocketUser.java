@@ -16,8 +16,6 @@
 package org.codefrags.websocket;
 
 import java.io.IOException;
-import java.io.InputStream;
-import java.io.OutputStream;
 import java.nio.ByteBuffer;
 import java.nio.channels.SocketChannel;
 import java.security.MessageDigest;
@@ -45,7 +43,7 @@ import org.codefrags.websocket.codec.Base64;
  *  
  * @author Austin Miller
  * @see org.codefrags.websocket.MaskedFrame
- * @see org.codefrags.websocket.WritableFrame
+ * @see org.codefrags.websocket.FrameBuffer
  */
 public class WebSocketUser {
 	/**
@@ -72,11 +70,10 @@ public class WebSocketUser {
 	private int id;
 	private Map<String,String> headers = new HashMap<String,String>();
 	private SocketChannel socketChannel;
-	private Queue<WritableFrame> outgoingFrames = new ConcurrentLinkedQueue<WritableFrame>();
+	private Queue<FrameBuffer> outgoingFrames = new ConcurrentLinkedQueue<FrameBuffer>();
 	private List<MaskedFrame> frames = new ArrayList<MaskedFrame>();
 	private ByteBuffer in = ByteBuffer.allocate(CAPACITY);
 	private ByteBuffer out = ByteBuffer.allocate(CAPACITY);
-	private ByteBuffer scratch = ByteBuffer.allocate(CAPACITY);
 	private MaskedFrame frame;
 	private WebSocketListener webSocketListener;
 	private long pingSentTime = 0;
@@ -118,7 +115,7 @@ public class WebSocketUser {
 	}
 	
 	public void send(String message) {
-		outgoingFrames.add(new WritableFrame(message));
+		outgoingFrames.add(FrameBuffer.createTextFrame(message));
 	}
 
 	/**
@@ -130,19 +127,38 @@ public class WebSocketUser {
 	void write() throws IOException {
 		
 		if(status == Status.RESPONDING) {
-			ByteBuffer src = ByteBuffer.wrap(header);
-			written += socketChannel.write(src);
-			if(header.length == written) {
-				// full server response has been written
+			
+			writeOut();
+			
+			if(out == null) {
 				status = Status.OPEN;
-				header = null; // lets free this memory
 			}
 			
 		} else if (status == Status.OPEN) {
-			while(outgoingFrames.isEmpty() == false) {
-				WritableFrame frame = new WritableFrame(outgoingFrames.poll());
-				frame.write(out);
+			
+			if(out == null && outgoingFrames.size() == 0) {
+				return;
 			}
+			
+			if(out == null) {
+				out = outgoingFrames.poll().getBuffer();
+			}
+			
+			writeOut();
+		}
+	}
+
+	/**
+	 * @throws IOException 
+	 * 
+	 */
+	private void writeOut() throws IOException {
+		if(socketChannel.write(out) == -1) {
+			throw new IOException("socket is no longer valid");
+		}
+		
+		if(out.position() == out.limit()) {
+			out = null;
 		}
 	}
 
@@ -170,7 +186,6 @@ public class WebSocketUser {
 				throw new IOException("Failed to receive pong in time, connection is now invalid.");
 			}
 		}
-		
 		read = socketChannel.read(in);
 		
 		if(read == 0) {
@@ -233,10 +248,11 @@ public class WebSocketUser {
 				+ "Sec-WebSocket-Protocol: %s\r\n\r\n",
 				accept, protocol);
 
-		header = response.getBytes();
+		out.clear();
+		out.put(response.getBytes());
+		out.flip();
 		logger.debug(response);
 		status = Status.RESPONDING;
-		written = 0;
 	}
 
 	/**
@@ -273,6 +289,7 @@ public class WebSocketUser {
 	private void readHeaders() throws IOException {
 		
 		String header = new String(in.array(),0,in.position()) ;
+		in.clear();
 		
 		logger.debug(header);
 		
@@ -329,18 +346,21 @@ public class WebSocketUser {
 			frame = MaskedFrame.newFrame();
 		}
 		
-		written = frame.writeBytes(bytes, 0, read);
+		in.flip();
+		
+		written = frame.writeBytes(in.array(), in.position(), in.limit());
 
-		while(written != read) {
+		while(written != in.limit()) {
 			handleFrame();
 			frame = MaskedFrame.newFrame();
-			written += frame.writeBytes(bytes, written, read-written);
+			written += frame.writeBytes(in.array(), written, in.limit()-written);
 		}
 
 		if(frame.isConstructed()) {
 			handleFrame();
 			frame = null;
 		}
+		in.clear();
 	}
 
 	/**
@@ -358,14 +378,13 @@ public class WebSocketUser {
 		if(logger.isDebugEnabled()) { logger.debug(">>> Frame read by "+id); }
 		
 		if(frame.getOpCode() == OpCode.CLOSE && status != Status.CLOSING) {
-			close();
+			sendCloseFrame();
 			return;
 		}
 		
 		if(frame.getOpCode() == OpCode.PING) {
 			logger.debug(">>> Ping"); 
-			WritableFrame pong = new WritableFrame(OpCode.PONG);
-			pong.write(out);
+			outgoingFrames.add(FrameBuffer.createControlFrame(OpCode.PONG));
 			return;
 		}
 		
@@ -403,32 +422,20 @@ public class WebSocketUser {
 	 *  
 	 * @throws IOException
 	 */
-	void close() {
-		try {
-			status = Status.CLOSING;
-			WritableFrame close = new WritableFrame(OpCode.CLOSE);
-			close.write(out);
-		} catch(IOException e) {
-			logger.error(e.getMessage(),e);
-		}
+	void sendCloseFrame() {
+		status = Status.CLOSING;
+		outgoingFrames.add(FrameBuffer.createControlFrame(OpCode.CLOSE));
+	}
+	
+	void close() throws IOException {
+		socketChannel.close();
+		webSocketListener.onCloseConnection(this);
 	}
 		
 
-	public boolean ping() {
-		try {
-			WritableFrame frame = new WritableFrame(OpCode.PING);
-			frame.write(out);
-			pingSentTime = System.currentTimeMillis();
-			return true;
-		} catch(Exception e) {
-			logger.error(e.getMessage(),e);
-			try {
-				socketChannel.close();
-			} catch(Exception j) {
-				logger.error(j.getMessage(),j);
-			}
-			return false;
-		}
+	public void ping() {
+		outgoingFrames.add(FrameBuffer.createControlFrame(OpCode.PING));
+		pingSentTime = System.currentTimeMillis();
 	}
 	
 	public Status getStatus() {

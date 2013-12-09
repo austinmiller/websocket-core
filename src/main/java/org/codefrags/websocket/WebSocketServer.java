@@ -16,7 +16,6 @@
 package org.codefrags.websocket;
 
 import java.io.IOException;
-import java.net.InetAddress;
 import java.net.InetSocketAddress;
 import java.net.UnknownHostException;
 import java.nio.channels.ClosedChannelException;
@@ -96,7 +95,7 @@ public class WebSocketServer implements Runnable {
 		// select calls;
 		for(SelectionKey sk : selector.keys()) {
 			WebSocketUser user = (WebSocketUser) sk.attachment();
-			user.close();
+			user.sendCloseFrame();
 		}
 		
 	}
@@ -149,9 +148,7 @@ public class WebSocketServer implements Runnable {
 		for(SelectionKey sk : selector.keys()) {
 			WebSocketUser user = (WebSocketUser) sk.attachment();
 			if(user != null && user.getStatus() == Status.OPEN) {
-				if(user.ping() == false) {
-					webSocketListener.onCloseConnection(user);
-				}
+				user.ping();
 			}
 		}
 		
@@ -196,8 +193,6 @@ public class WebSocketServer implements Runnable {
         Set<SelectionKey> readyKeys = selector.selectedKeys();
         Iterator<SelectionKey> i = readyKeys.iterator();
         
-		logger.debug("sizeof keys == "+readyKeys.size());
-		System.out.println(readyKeys.size());
 		while(i.hasNext()) {
 			SelectionKey sk = i.next();
 			i.remove();
@@ -216,7 +211,7 @@ public class WebSocketServer implements Runnable {
 	
 				if (sk.isValid() && sk.isReadable()) {
 					if(user.read() == false) {
-						webSocketListener.onCloseConnection(user);
+						user.close();
 					}
 				}
 			} catch(Exception e) {

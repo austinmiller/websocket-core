@@ -17,6 +17,7 @@ package org.codefrags.websocket;
 
 import static org.junit.Assert.*;
 
+import org.codefrags.websocket.example.ChatServer;
 import org.junit.Test;
 
 /**

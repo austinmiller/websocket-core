@@ -13,7 +13,7 @@
  * See the License for the specific language governing permissions and
  * limitations under the License.
  */
-package org.codefrags.websocket;
+package org.codefrags.websocket.example;
 
 import java.util.HashMap;
 import java.util.Map;
@@ -60,7 +60,8 @@ public class ChatServer implements WebSocketListener {
 		webSocketServer.setProtocol("chat");
 		webSocketServer.setWebSocketListener(this);
 		webSocketServer.setPort(8090);
-		webSocketServer.setPingInterval(60*1000); // ping every minute
+		webSocketServer.setPingInterval(0); // ping never
+//		webSocketServer.setPingInterval(60*1000); // ping every minute
 	}
 
 
@@ -69,9 +70,12 @@ public class ChatServer implements WebSocketListener {
 	 */
 	@Override
 	public void onNewUser(WebSocketUser webSocketUser) {
-		users.put(webSocketUser,"guest-"+webSocketUser.getId());
-		System.out.println("New user "+webSocketUser.getId());
+		String name = "guest-"+webSocketUser.getId();
+		users.put(webSocketUser,name);
+		System.out.println("New user "+name);
 		webSocketUser.send("echo:"+SERVER_NAME+": You are connected.");
+		webSocketUser.send("name:"+name);
+		broadcast(null,SERVER_NAME,name + " has joined the chat.");
 	}
 
 
@@ -80,6 +84,7 @@ public class ChatServer implements WebSocketListener {
 	 */
 	@Override
 	public void onMessage(WebSocketUser webSocketUser, String message) {
+		System.out.println("[rcv] "+message);
 		if(message.startsWith("send:")) {
 			broadcast(webSocketUser,users.get(webSocketUser),message.substring(5));
 		} else if(message.startsWith("name:")) {
@@ -95,9 +100,7 @@ public class ChatServer implements WebSocketListener {
 		String message = "echo:"+name + ": "+msg;
 		
 		for(WebSocketUser user : users.keySet()) {
-			if(user != webSocketUser) {
-				user.send(message);
-			}
+			user.send(message);
 		}
 	}
 
@@ -116,7 +119,7 @@ public class ChatServer implements WebSocketListener {
 			error = "Illegal name";
 		}
 		
-		if(name.matches("[a-zA-Z0-9]") == false) {
+		if(name.matches("^[a-zA-Z0-9]*$") == false) {
 			error = "Please only select digits and characters.";
 		}
 		
@@ -126,7 +129,7 @@ public class ChatServer implements WebSocketListener {
 		} else {
 			String oldName = users.get(user);
 			users.put(user, name);
-			broadcast(null,SERVER_NAME,":"+oldName + " renamed to "+name);
+			broadcast(null,SERVER_NAME,oldName + " renamed to "+name);
 			System.out.println("User "+oldName+" renamed to "+name);
 		}
 	}
@@ -138,7 +141,9 @@ public class ChatServer implements WebSocketListener {
 	@Override
 	public void onCloseConnection(WebSocketUser webSocketUser) {
 		System.out.println("Losing "+users.get(webSocketUser));
+		String name = users.get(webSocketUser);
 		users.remove(webSocketUser);
+		broadcast(null,SERVER_NAME,name + " has disconnected.");
 	}
 	
 }

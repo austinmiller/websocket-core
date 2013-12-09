@@ -1,0 +1,104 @@
+<html>
+<head>
+	<meta http-equiv="Content-Type" content="text/html; charset=utf-8"/>
+	<script src="//ajax.googleapis.com/ajax/libs/jquery/2.0.3/jquery.min.js"></script>
+	
+	<style>
+	* {
+		margin: 0;
+		padding: 0;
+	}
+	
+	textarea.output {
+		position: absolute;
+		width: 80%;
+		height: 70%;
+		left: 10%;
+		top: 10%;
+	}
+	
+	input.chat {
+		position: absolute;
+		width: 60%;
+		height: 30px;
+		left: 30%;
+		top: 85%;
+	}
+
+	input.name {
+		position: absolute;
+		width: 15%;
+		height: 30px;
+		left: 10%;
+		top: 85%;
+	}
+	
+	</style>
+</head>
+<body>
+    <h2>Chat Server</h2>
+    
+    <textarea class="output" ></textarea>
+    
+    <input class="name"/>
+    
+    <input class="chat"/>
+
+<script>
+
+ws = {};
+
+function echo(msg) {
+	$(".output").val($(".output").val() + "\r\n" + msg);
+}
+
+function setName(newName) {
+	$(".name").val(newName);
+}
+
+function registerEvents() {
+	$(".name").keypress(function (e) {
+		if(e.which ==13) {
+			ws.send("name:"+$(this).val());
+		}
+	});
+
+	$(".chat").keypress(function (e) {
+		if(e.which ==13) {
+			ws.send("send:"+$(".chat").val());
+			$(this).val("");
+		}
+	});
+
+	$(document).ready(function(){
+		 $('.output').scrollTop($('.output')[0].scrollHeight);
+	});
+}
+
+$(function() {
+	ws = new WebSocket('ws://localhost:8090', ['chat']);
+
+	ws.onopen = function () {
+		registerEvents();
+	};
+
+	ws.onerror = function (error) {
+		console.log(error);
+		console.log(error.data);
+	};
+
+	ws.onmessage = function (e) {
+		console.log(e.data);
+		if(e.data.lastIndexOf("echo:", 0) === 0) {
+			echo(e.data.substring(5));
+		} else if(e.data.lastIndexOf("name:", 0) === 0) {
+			setName(e.data.substring(5));
+		}
+	};
+});
+</script>
+
+
+
+</body>
+</html>
