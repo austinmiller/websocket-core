@@ -2,8 +2,6 @@
 
 A simple websocket implementation using Java NIO. Relies only on apache common logging and junit.  A single thread can handle hundreds of connection websockets.
 
-## License
-
 ## Protocol Compliance
 
 Handles all control frames for version 13.  Handles only UTF-8 text frames at this time.  The library handles fragmented frames and maintains minimal synchronization.
