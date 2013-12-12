@@ -442,8 +442,17 @@ public class WebSocketUser {
 		return status;
 	}
 
-	public void setStatus(Status status) {
-		this.status = status;
+	/**
+	 * Fails the connection, mostly due to a protocol error.
+	 */
+	public void fail() {
+		status = Status.CLOSING;
+		try {
+			socketChannel.close();
+			logger.debug("Failed the connection for user " + getId());
+		} catch (IOException e) {
+			logger.error(e);
+		}
 	}
 
 

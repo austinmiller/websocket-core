@@ -56,7 +56,7 @@ public class FrameBuffer {
 		int bsize = 2;
 		
 		if(bytes.length > 125) {
-			if(bytes.length > 1<<16) {
+			if(bytes.length < 1<<16) {
 				bsize += 2;
 				size=126;
 			} else {
