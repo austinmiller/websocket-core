@@ -57,12 +57,15 @@ public class WebSocketServer implements Runnable {
 	private Command command = Command.RUN;
 	private String protocol = "chat";
 	private long pingInterval = 0;
+	private Thread thread;
 	
 	/* (non-Javadoc)
 	 * @see java.lang.Runnable#run()
 	 */
 	public void run() {
 		try {
+			thread = Thread.currentThread();
+			
 			startServer();
 			
 			runServer();
@@ -167,6 +170,12 @@ public class WebSocketServer implements Runnable {
 			command = Command.SHUTDOWN;
 		} else {
 			command = Command.SHUTDOWN_NOW;
+		}
+		
+		try {
+			thread.join();
+		} catch (InterruptedException e) {
+			logger.error(e);
 		}
 	}
 
