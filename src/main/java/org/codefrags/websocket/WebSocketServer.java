@@ -57,7 +57,7 @@ public class WebSocketServer implements Runnable {
 	private Command command = Command.RUN;
 	private String protocol = "chat";
 	private long pingInterval = 0;
-	private Thread thread;
+	private Thread thread = null;
 	
 	/* (non-Javadoc)
 	 * @see java.lang.Runnable#run()
@@ -166,6 +166,10 @@ public class WebSocketServer implements Runnable {
 	 * @param whether to shutdown gracefully by following the protocol
 	 */
 	public void shutdown(boolean gracefully) {
+		if(thread == null) {
+			return; // must not be running
+		}
+		
 		if(gracefully) {
 			command = Command.SHUTDOWN;
 		} else {
