@@ -429,7 +429,11 @@ public class WebSocketUser {
 	
 	void close() throws IOException {
 		socketChannel.close();
-		webSocketListener.onCloseConnection(this);
+		try {
+			webSocketListener.onCloseConnection(this);
+		} catch(Exception e) {
+			logger.error(e.getMessage(),e);
+		}
 	}
 		
 
