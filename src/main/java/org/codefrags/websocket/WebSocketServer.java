@@ -27,9 +27,9 @@ import java.util.ConcurrentModificationException;
 import java.util.Iterator;
 import java.util.Set;
 
-import org.apache.commons.logging.Log;
-import org.apache.commons.logging.LogFactory;
 import org.codefrags.websocket.WebSocketUser.Status;
+import org.slf4j.Logger;
+import org.slf4j.LoggerFactory;
 
 /**
  * @author Austin Miller
@@ -38,7 +38,7 @@ import org.codefrags.websocket.WebSocketUser.Status;
 public class WebSocketServer implements Runnable {
 	private static final String CONCURRENT_EXCEPTION_MESSAGE = "Cannot call after starting server.";
 
-	protected static final Log logger = LogFactory.getLog(WebSocketServer.class);
+	protected static final Logger logger = LoggerFactory.getLogger(WebSocketServer.class);
 
 	static private Selector selector;
 	
@@ -109,6 +109,8 @@ public class WebSocketServer implements Runnable {
 	 * @throws IOException 
 	 */
 	private void closeAllNow() throws IOException {
+		logger.debug("closing all keys {} aggressively",selector.keys());
+		
 		for(SelectionKey sk : selector.keys()) {
 			sk.channel().close();
 		}
@@ -142,6 +144,7 @@ public class WebSocketServer implements Runnable {
 				Thread.sleep(time);
 			}
 		}
+		logger.info("shutting down");
 	}
 
 	/**
@@ -166,7 +169,11 @@ public class WebSocketServer implements Runnable {
 	 * @param whether to shutdown gracefully by following the protocol
 	 */
 	public void shutdown(boolean gracefully) {
+		
+		logger.info("received command to shutdown, gracefully="+gracefully);
+		
 		if(thread == null) {
+			logger.warn("thread object is null, likely never started");
 			return; // must not be running
 		}
 		
@@ -177,9 +184,10 @@ public class WebSocketServer implements Runnable {
 		}
 		
 		try {
+			logger.info("blocking until server is shutdown");
 			thread.join();
 		} catch (InterruptedException e) {
-			logger.error(e);
+			logger.error(e.getMessage(),e);
 		}
 	}
 

@@ -27,9 +27,9 @@ import java.util.Map;
 import java.util.Queue;
 import java.util.concurrent.ConcurrentLinkedQueue;
 
-import org.apache.commons.logging.Log;
-import org.apache.commons.logging.LogFactory;
 import org.codefrags.websocket.codec.Base64;
+import org.slf4j.Logger;
+import org.slf4j.LoggerFactory;
 
 /**
  * This class is responsible for sending and receiving websocket frames in an NIO 
@@ -50,7 +50,7 @@ public class WebSocketUser {
 	 * 
 	 */
 	private static final int CAPACITY = 1<<16;
-	protected static final Log logger = LogFactory.getLog(WebSocketUser.class);
+	protected static final Logger logger = LoggerFactory.getLogger(WebSocketUser.class);
 	private static final String WEBSOCKET_GUID = "258EAFA5-E914-47DA-95CA-C5AB0DC85B11";
 	
 	/**
@@ -455,7 +455,7 @@ public class WebSocketUser {
 			socketChannel.close();
 			logger.debug("Failed the connection for user " + getId());
 		} catch (IOException e) {
-			logger.error(e);
+			logger.error(e.getMessage(),e);
 		}
 	}
 

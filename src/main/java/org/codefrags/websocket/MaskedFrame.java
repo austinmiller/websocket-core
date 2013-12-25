@@ -19,8 +19,8 @@ import java.io.IOException;
 import java.util.ArrayList;
 import java.util.List;
 
-import org.apache.commons.logging.Log;
-import org.apache.commons.logging.LogFactory;
+import org.slf4j.Logger;
+import org.slf4j.LoggerFactory;
 
 /**
  * This class is meant to encapsulate a websocket frame while also keeping
@@ -30,7 +30,7 @@ import org.apache.commons.logging.LogFactory;
  *
  */
 public class MaskedFrame {
-	protected static final Log logger = LogFactory.getLog(MaskedFrame.class);
+	protected static final Logger logger = LoggerFactory.getLogger(MaskedFrame.class);
 	
 	OpCode opCode;
 
